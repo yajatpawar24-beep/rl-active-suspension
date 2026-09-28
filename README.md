@@ -106,7 +106,3 @@ An independent Scilab/Xcos block diagram (`scilab/Quarter_car_passive.zcos`) imp
 - gymnasium
 - numpy, scipy, matplotlib
 - torch (CPU)
-
-## Acknowledgements
-
-Course project for Mechanical Engineering (Mechanism and Machine Design), guided by Mrs. Mrunalini Bhandarkar.
