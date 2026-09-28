@@ -1,0 +1,130 @@
+BLOCK-BY-BLOCK EXPLANATION — notebook.ipynb
+============================================
+
+BLOCK 1 — pip install
+  Installs all required packages: stable-baselines3 (SAC), gymnasium (RL env standard),
+  scipy (ODE solver), matplotlib (plots). Run once; skip on re-runs.
+
+BLOCK 2 — Imports
+  Pulls in numpy/matplotlib for math and plotting, scipy.integrate.solve_ivp for the
+  physics simulation, gymnasium for the RL environment interface, SAC from
+  stable-baselines3, and BaseCallback to hook into training for logging rewards.
+
+BLOCK 3 — Parameters
+  Defines the physical constants for a standard academic quarter-car model:
+    ms  = sprung mass (car body, 250 kg)
+    mu  = unsprung mass (wheel + axle, 50 kg)
+    ks  = suspension spring stiffness (16 000 N/m)
+    c0  = baseline passive damping (1 000 Ns/m)
+    kt  = tyre stiffness (190 000 N/m)
+    C_MIN/C_MAX = damper range for semi-active control (200–4000 Ns/m)
+    W1–W4 = reward weighting: body acceleration matters most (W1=1), then
+            suspension travel (W2=0.1), then tyre deflection (W3=0.05),
+            then control effort penalty (W4=1e-4)
+
+BLOCK 4 — Road profiles + preview plot
+  bump_profile():
+    Generates a haversine (cosine) shaped bump at a set position. Smooth entry/exit,
+    no discontinuities that would create numerical issues. The bump is 5 cm high and
+    0.5 m wide; at 10 m/s the car hits it at t≈0.5 s.
+
+  iso_random_profile():
+    Generates a statistically realistic road surface using ISO 8608 Class B
+    (typical paved road). Method: shape white noise in the frequency domain using a
+    power spectral density Gq ∝ n^-2, then IFFT to get the time-domain signal.
+    Different seeds = different random roads (used during training for variety).
+
+  The two preview subplots let you confirm the profiles look sensible before running
+  any simulation.
+
+BLOCK 5 — ODE + passive simulation
+  ode_rhs():
+    Implements the two coupled second-order ODEs as a first-order system [x1, x1', x2, x2'].
+    Fa=0 for passive (no active force). The function signature matches what solve_ivp expects.
+
+  simulate_passive():
+    Wraps ode_rhs with scipy's solve_ivp (RK45 adaptive integrator, max step = DT=1ms).
+    Returns time array and state matrix. Runs twice: once for bump, once for random road.
+
+BLOCK 6 — Passive response plots (bump + random, side by side)
+  Three rows per column:
+    Row 1: Body and wheel displacement vs road input — shows how the car bounces
+    Row 2: Body acceleration — the comfort metric; bigger = worse ride
+    Row 3: Suspension travel (x1-x2) — how much the spring compresses; bounded by
+           physical rattle space
+  This is the baseline everything else is compared against.
+
+BLOCK 7 — QuarterCarEnv (Gymnasium environment)
+  A standard Gymnasium environment wrapping the quarter-car physics.
+
+  Observation space (5 floats, clipped to realistic bounds):
+    [x1-x2, x1'-x2', x2-zr, x1', x2']
+    = suspension deflection, suspension velocity, tyre deflection, body vel, wheel vel
+
+  Action space (1 float):
+    Damping coefficient c ∈ [C_MIN, C_MAX] — semi-active only.
+    Always positive (energy cannot be added, only dissipated).
+
+  reset(): Initialises state to zero, generates a fresh road profile per episode.
+           Random road for training (variety), bump for evaluation.
+
+  step(): One DT=1ms Euler integration step. Computes the reward:
+          r = -(W1*body_accel² + W2*susp_defl² + W3*tyre_defl² + W4*c²)
+          Negative because SAC maximises reward (we want to minimise discomfort).
+
+BLOCK 8 — Env sanity check + random policy
+  Runs a full episode with random actions to confirm reset()/step() don't crash,
+  shapes are correct, and reward is finite. Prints obs shape, action shape, episode
+  reward. If this block passes, the environment is correctly wired for SAC.
+
+BLOCK 9 — Skyhook baseline + comparison plot
+  run_skyhook():
+    Classical semi-active strategy: applies high damping (c_sky) when body velocity
+    and relative suspension velocity are in the same direction (body moving away from
+    wheel → damp hard to pull it back). Otherwise uses C_MIN.
+    This is the classical benchmark every RL paper compares against.
+
+  Prints RMS body acceleration and RMS suspension travel for passive vs skyhook.
+  Plot shows: passive (blue), skyhook (red), road (gray dotted) across three metrics.
+  Expected result: skyhook body acceleration noticeably lower than passive.
+
+BLOCK 10 — SAC training
+  RewardLogger callback:
+    Accumulates per-step reward, appends episode total when done=True.
+    Needed because SB3 doesn't log per-episode rewards by default at verbose=0.
+
+  SAC hyperparameters:
+    learning_rate=3e-4 (Adam, standard)
+    buffer_size=50000 (replay buffer — stores past transitions)
+    batch_size=256 (mini-batch per gradient step)
+    tau=0.005 (soft target network update rate)
+    gamma=0.99 (discount factor — cares about future comfort)
+    train_freq=1 (update every step)
+    50 000 timesteps = ~10 full episodes; NOT expected to converge, this is a
+    partial training run for the 50% checkpoint demo.
+
+BLOCK 11 — Reward curve plot
+  Shows episode total reward vs episode number (raw + 15-episode moving average).
+  Early in training the curve is noisy and negative. If training is working, you
+  should see a general upward trend even at 50k steps. The title explicitly says
+  "not converged yet" — that's honest for this checkpoint.
+
+BLOCK 12 — Final comparison plot + RMS table
+  Runs the partially trained SAC policy deterministically (no exploration) on the
+  bump road and compares all three controllers:
+    Passive (blue) — fixed c0, no intelligence
+    Skyhook (red) — classical heuristic, known good reference
+    SAC partial (green) — RL policy after 50k steps
+
+  Prints RMS table: body acceleration and suspension travel for all three.
+  Three-row plot mirrors the passive plot layout so the comparison reads cleanly.
+  At 50k steps SAC may not beat skyhook yet — that's fine and expected. The point
+  is to show the learning infrastructure works end-to-end.
+
+============================================
+WHAT'S NOT HERE YET (after tomorrow):
+  - SAC trained to convergence (~500k–1M steps)
+  - Active-force variant (Fa bounded, not c)
+  - ISO 2631 frequency-weighted comfort metric
+  - Robustness sweep across road classes and speeds
+  - SIH project (bike parameters, firmware, dashboard)

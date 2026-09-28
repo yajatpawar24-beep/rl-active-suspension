@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# macOS
+.DS_Store
+
+# Checkpoints and large model files (too large for GitHub)
+course_project/checkpoints/
+course_project/checkpoints_phase2/
+course_project/checkpoints_v3/
+course_project/sac_semi_v3*.zip
+
+# Logs and runtime files
+course_project/train*.log
+course_project/train*.txt
+course_project/eval_log.txt
+course_project/train.pid
+
+# Claude/OMC internal
+.claude/
+.omc/
+
+# Old notebook plots (replaced by results/)
+course_project/plot_cell*.png
